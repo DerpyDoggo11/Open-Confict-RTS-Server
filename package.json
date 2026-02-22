@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "my-app",
+  "name": "OpenConflictRTSServer",
   "version": "0.17.0",
   "description": "npm init template for bootstrapping an empty Colyseus project",
   "type": "module",
@@ -9,10 +9,10 @@
     "node": ">= 20.9.0"
   },
   "scripts": {
-    "start": "tsx watch src/app.config.ts",
+    "start": "node build/app.config.js",
+    "build": "rm -rf build && tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/app.config.ts",
     "loadtest": "tsx loadtest/example.ts --room my_room --numClients 2",
-    "build": "npm run clean && tsc -p tsconfig.build.json",
-    "clean": "rimraf build",
     "test": "mocha -r tsx test/**.test.ts --exit --timeout 15000"
   },
   "author": "",
