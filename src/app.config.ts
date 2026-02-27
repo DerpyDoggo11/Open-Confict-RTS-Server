@@ -1,11 +1,21 @@
-import { defineServer, defineRoom } from "colyseus";
-import { ChatRoom } from "./rooms/chatRoom.js";
+import config, { listen } from "@colyseus/tools";
+import { GameRoom } from "./rooms/gameRoom.js";
 
-const server = defineServer({
-  rooms: {
-    game_room: defineRoom(ChatRoom),
+const app = config({
+  initializeGameServer: (gameServer) => {
+    gameServer.define("game_room", GameRoom);
+    console.log("game_room registered");
   },
+
+  initializeExpress: (expressApp) => {
+    expressApp.get("/health", (req, res) => res.json({ status: "ok" }));
+  },
+
+  beforeListen: () => {
+    console.log("Server starting...");
+  }
 });
 
-server.listen(2567);
-console.log("Server running on ws://localhost:2567");
+listen(app, 2567).then(() => {
+  console.log("Server running on ws://localhost:2567");
+});
