@@ -10,7 +10,7 @@ export class GameRoom extends Room {
   state = new GameState();
   private players: Map<string, PlayerInfo> = new Map();
   private gameDuration = 480;
-  private intermissionDuration = 15;
+  private intermissionDuration = 60;
   private timeRemaining = this.gameDuration;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
 
