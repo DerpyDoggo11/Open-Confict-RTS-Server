@@ -13,6 +13,8 @@ export class GameRoom extends Room {
   private intermissionDuration = 60;
   private timeRemaining = this.gameDuration;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
+  private readyPlayers: Set<string> = new Set();
+  private readyStateListeners: ((readyCount: number, totalCount: number) => void)[] = [];
 
   onCreate() {
     this.setState(new GameState());
@@ -40,7 +42,6 @@ export class GameRoom extends Room {
       this.state.troops.set(msg.id, troop);
     });
 
-    // Client moves a troop
     this.onMessage("moveTroop", (client, msg: {
       id: string; tileX: number; tileY: number;
     }) => {
@@ -50,7 +51,6 @@ export class GameRoom extends Room {
       troop.tileY = msg.tileY;
     });
 
-    // Client attacks with a troop
     this.onMessage("attackTroop", (client, msg: {
       attackerId: string; targetId: string; damage: number;
     }) => {
@@ -67,7 +67,23 @@ export class GameRoom extends Room {
       }
     });
 
-    this.onMessage("ready", () => {});
+    this.onMessage("ready", (client, msg: { isReady: boolean }) => {
+      if (msg.isReady) {
+        this.readyPlayers.add(client.sessionId);
+      } else {
+        this.readyPlayers.delete(client.sessionId);
+      }
+
+      this.broadcast("playerReady", {
+        readyCount: this.readyPlayers.size,
+        totalCount: this.clients.length,
+      });
+
+      const inIntermission = this.timeRemaining > this.intermissionDuration;
+      if (inIntermission && this.readyPlayers.size >= this.clients.length) {
+        this.broadcast("gameStart", {});
+      }
+    });
   }
 
   onJoin(client: Client, options: { name?: string }) {
@@ -90,6 +106,10 @@ export class GameRoom extends Room {
     }, { except: client });
 
     if (this.clients.length >= this.maxClients) this.lock();
+  }
+
+  onReadyStateChange(fn: (readyCount: number, totalCount: number) => void) {
+    this.readyStateListeners.push(fn);
   }
 
   private startMainTimer() {
@@ -127,6 +147,7 @@ export class GameRoom extends Room {
     const count = this.clients.length;
     const max = this.maxClients;
     this.clients.forEach(c => c.send("playerCount", { count, max }));
+    this.readyPlayers.delete(client.sessionId);
     this.broadcast("chat", {
       playerId: "system", name: "System",
       text: `${name} left the game.`,
