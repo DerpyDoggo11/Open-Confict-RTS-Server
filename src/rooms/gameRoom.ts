@@ -19,7 +19,8 @@ export class GameRoom extends Room {
 
   onCreate() {
     this.setState(new GameState());
-
+    this.setMetadata({ startedAt: Date.now() });
+    
     this.onMessage("chat", (client, message: { text: string }) => {
       const name = this.players.get(client.sessionId)?.name ?? "Unknown";
       this.broadcast("chat", {

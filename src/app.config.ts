@@ -48,6 +48,20 @@ const app = config({
         res.json([]);
       }
     });
+
+    expressApp.get("/active-matches", async (_req, res) => {
+      try {
+        const rooms = await matchMaker.query({ name: "game_room" });
+        res.json(rooms.map(r => ({
+          roomId:     r.roomId,
+          startedAt:  r.metadata?.startedAt ?? Date.now(),
+          clients:    r.clients,
+          maxClients: r.maxClients,
+        })));
+      } catch {
+        res.json([]);
+      }
+    });
   },
 });
 

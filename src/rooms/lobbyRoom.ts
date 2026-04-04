@@ -4,19 +4,13 @@ import { LobbyState, PlayerLobbyState } from "../server/schema.js";
 
 export class LobbyRoom extends Room {
   maxClients = 2;
+  private countdownTimer: ReturnType<typeof setTimeout> | null = null;
 
   get lobbyState(): LobbyState { return this.state as LobbyState; }
 
   onCreate(options: { serverIndex?: number }) {
     this.setState(new LobbyState());
     this.setMetadata({ serverIndex: options.serverIndex ?? 0 });
-
-    this.onMessage("setReady", (client, msg: { isReady: boolean }) => {
-      const player = this.lobbyState.players.get(client.sessionId);
-      if (!player) return;
-      player.isReady = msg.isReady;
-      this.checkAllReady();
-    });
 
     this.onMessage("voteMap", (client, msg: { mapId: string }) => {
       const player = this.lobbyState.players.get(client.sessionId);
@@ -30,17 +24,47 @@ export class LobbyRoom extends Room {
     const p = new PlayerLobbyState();
     p.name = options.name ?? `Player_${client.sessionId.slice(0, 4)}`;
     this.lobbyState.players.set(client.sessionId, p);
-    if (this.clients.length >= this.maxClients) this.lock();
+
+    if (this.clients.length >= this.maxClients) {
+      this.lock();
+      this.startCountdown();
+    }
   }
 
   onLeave(client: Client) {
-    const player = this.lobbyState.players.get(client.sessionId);
-    if (player) player.isReady = false;
     this.lobbyState.players.delete(client.sessionId);
+    this.cancelCountdown();
     this.unlock();
   }
 
-  onDispose() {}
+  onDispose() {
+    this.cancelCountdown();
+  }
+
+  private startCountdown() {
+    this.cancelCountdown();
+    this.countdownTimer = setTimeout(() => this.launchGame(), 5_000);
+  }
+
+  private cancelCountdown() {
+    if (this.countdownTimer) {
+      clearTimeout(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+  }
+
+  private async launchGame() {
+    try {
+      const reservation = await matchMaker.createRoom("game_room", {});
+      this.broadcast("startGame", {
+        roomId: reservation.roomId,
+        map: this.lobbyState.winningMap,
+      });
+      setTimeout(() => this.disconnect(), 3_000);
+    } catch (e) {
+      console.error("[LobbyRoom] Failed to create game room:", e);
+    }
+  }
 
   private updateWinningMap() {
     const tally: Record<string, number> = {};
@@ -53,19 +77,5 @@ export class LobbyRoom extends Room {
       if (count > best) { winner = map; best = count; }
     }
     this.lobbyState.winningMap = winner;
-  }
-
-  private async checkAllReady() {
-    if (this.clients.length < this.maxClients) return;
-    const allReady = Array.from(this.lobbyState.players.values())
-      .every((p: unknown) => (p as PlayerLobbyState).isReady);
-    if (!allReady) return;
-    try {
-      const reservation = await matchMaker.createRoom("game_room", {});
-      this.broadcast("startGame", { roomId: reservation.roomId, map: this.lobbyState.winningMap });
-      setTimeout(() => this.disconnect(), 3000);
-    } catch (e) {
-      console.error("[LobbyRoom] Failed to create game room:", e);
-    }
   }
 }
