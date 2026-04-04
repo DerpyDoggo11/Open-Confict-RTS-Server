@@ -3,6 +3,7 @@ import { GameState, TroopState } from "../server/schema.js";
 
 interface PlayerInfo {
   name: string;
+  team: "blue" | "red";
 }
 
 export class GameRoom extends Room {
@@ -88,7 +89,19 @@ export class GameRoom extends Room {
 
   onJoin(client: Client, options: { name?: string }) {
     const name = options.name ?? `Player_${client.sessionId.slice(0, 4)}`;
-    this.players.set(client.sessionId, { name });
+
+    const blueCount = Array.from(this.players.values()).filter(p => p.team === "blue").length;
+    const redCount = Array.from(this.players.values()).filter(p => p.team === "red").length;
+
+    let team: "blue" | "red";
+
+    if (blueCount === 0 && redCount === 0) {
+      team = Math.random() < 0.5 ? "blue" : "red";
+    } else {
+      team = blueCount <= redCount ? "blue" : "red";
+    }
+
+    this.players.set(client.sessionId, { name, team });
 
     setTimeout(() => {
       const count = this.clients.length;
@@ -105,8 +118,49 @@ export class GameRoom extends Room {
       timestamp: Date.now(),
     }, { except: client });
 
+    this.broadcastTeams();
+
     if (this.clients.length >= this.maxClients) this.lock();
   }
+
+  onLeave(client: Client) {
+    const name = this.players.get(client.sessionId)?.name ?? "Unknown";
+    this.players.delete(client.sessionId);
+    this.stopMainTimer();
+    this.unlock();
+    const count = this.clients.length;
+    const max = this.maxClients;
+    this.clients.forEach(c => c.send("playerCount", { count, max }));
+    this.readyPlayers.delete(client.sessionId);
+    
+    this.broadcast("chat", {
+      playerId: "system", name: "System",
+      text: `${name} left the game.`,
+      timestamp: Date.now(),
+    });
+
+    this.broadcastTeams();
+  }
+
+  private broadcastTeams() {
+    const teams = [
+      {
+        teamName: "Blue",
+        players: Array.from(this.players.entries())
+          .filter(([_, p]) => p.team === "blue")
+          .map(([id, p]) => ({ id, name: p.name })),
+      },
+      {
+        teamName: "Red",
+        players: Array.from(this.players.entries())
+          .filter(([_, p]) => p.team === "red")
+          .map(([id, p]) => ({ id, name: p.name })),
+      },
+    ];
+
+    this.broadcast("playersUpdate", teams);
+  }
+
 
   onReadyStateChange(fn: (readyCount: number, totalCount: number) => void) {
     this.readyStateListeners.push(fn);
@@ -139,21 +193,6 @@ export class GameRoom extends Room {
     if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
   }
 
-  onLeave(client: Client) {
-    const name = this.players.get(client.sessionId)?.name ?? "Unknown";
-    this.players.delete(client.sessionId);
-    this.stopMainTimer();
-    this.unlock();
-    const count = this.clients.length;
-    const max = this.maxClients;
-    this.clients.forEach(c => c.send("playerCount", { count, max }));
-    this.readyPlayers.delete(client.sessionId);
-    this.broadcast("chat", {
-      playerId: "system", name: "System",
-      text: `${name} left the game.`,
-      timestamp: Date.now(),
-    });
-  }
 
   onDispose() { this.stopMainTimer(); }
 }

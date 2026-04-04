@@ -2,7 +2,6 @@ import config, { listen } from "@colyseus/tools";
 import { matchMaker } from "colyseus";
 import { GameRoom } from "./rooms/gameRoom.js";
 import { LobbyRoom } from "./rooms/lobbyRoom.js";
-import cors from "cors";
 
 const MAX_SERVERS = 4;
 
@@ -13,9 +12,6 @@ const app = config({
   },
 
   initializeExpress: (expressApp) => {
-
-    expressApp.use(cors({ origin: "https://open-conflict-rts.pages.dev" }));
-
     expressApp.get("/health", (req, res) => res.json({ status: "ok" }));
 
     expressApp.get("/rooms", async (req, res) => {
