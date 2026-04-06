@@ -69,6 +69,48 @@ export class GameRoom extends Room {
       }
     });
 
+    // Handle attack on a tile — applies damage * fireRate hits to any troop at that tile
+    this.onMessage("attackTile", (client, msg: {
+      attackerId: string; targetTileX: number; targetTileY: number;
+      damage: number; fireRate?: number;
+    }) => {
+      const attacker = this.state.troops.get(msg.attackerId);
+      if (!attacker || attacker.ownerId !== client.sessionId) return;
+
+      const fireRate = msg.fireRate ?? 1;
+
+      // Find the troop at the target tile that isn't owned by the attacker's owner
+      let target: TroopState | null = null;
+      let targetId: string | null = null;
+      this.state.troops.forEach((troop, id) => {
+        if (troop.ownerId !== client.sessionId &&
+            troop.tileX === msg.targetTileX &&
+            troop.tileY === msg.targetTileY) {
+          target = troop;
+          targetId = id;
+        }
+      });
+
+      if (!target || !targetId) return;
+
+      // Apply all hits from fireRate
+      const totalDamage = msg.damage * fireRate;
+      (target as TroopState).health = Math.max(0, (target as TroopState).health - totalDamage);
+
+      // Broadcast damage to all clients
+      this.broadcast("troopDamage", {
+        id: targetId,
+        newHealth: (target as TroopState).health,
+        damage: totalDamage,
+        attackerId: msg.attackerId,
+      });
+
+      if ((target as TroopState).health <= 0) {
+        this.state.troops.delete(targetId);
+        this.broadcast("troopDied", { id: targetId });
+      }
+    });
+
     this.onMessage("ready", (client, msg: { isReady: boolean }) => {
       if (msg.isReady) {
         this.readyPlayers.add(client.sessionId);
