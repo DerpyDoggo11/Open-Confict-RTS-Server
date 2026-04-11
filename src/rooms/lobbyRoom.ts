@@ -55,7 +55,9 @@ export class LobbyRoom extends Room {
 
   private async launchGame() {
     try {
-      const reservation = await matchMaker.createRoom("game_room", {});
+      const reservation = await matchMaker.createRoom("game_room", {
+        map: this.lobbyState.winningMap,
+      });
       this.broadcast("startGame", {
         roomId: reservation.roomId,
         map: this.lobbyState.winningMap,

@@ -17,9 +17,14 @@ export class GameRoom extends Room {
   private readyPlayers: Set<string> = new Set();
   private readyStateListeners: ((readyCount: number, totalCount: number) => void)[] = [];
 
-  onCreate() {
+  onCreate(options: { map?: string }) {
     this.setState(new GameState());
-    this.setMetadata({ startedAt: Date.now() });
+    const map = options.map;
+    this.setMetadata({ startedAt: Date.now(), map });
+
+    this.onMessage("getMap", (client) => {
+      client.send("mapInfo", { map });
+    });
     
     this.onMessage("chat", (client, message: { text: string }) => {
       const name = this.players.get(client.sessionId)?.name ?? "Unknown";
