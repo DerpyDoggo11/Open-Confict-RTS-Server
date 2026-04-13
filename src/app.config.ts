@@ -65,6 +65,7 @@ const app = config({
   },
 });
 
-listen(app, 2567).then(() => {
-  console.log("Server running on ws://localhost:2567");
+const PORT = parseInt(process.env.PORT || "2567", 10);
+listen(app, PORT).then(() => {
+  console.log(`Server running on port ${PORT}`);
 });
