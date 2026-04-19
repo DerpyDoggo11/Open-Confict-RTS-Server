@@ -76,40 +76,9 @@ export class GameRoom extends Room {
 
     this.onMessage("attackTile", (client, msg: {
       attackerId: string; targetTileX: number; targetTileY: number;
-      damage: number; fireRate?: number;
+      damage: number; fireRate?: number; splashRadius?: number;
     }) => {
-      const attacker = this.state.troops.get(msg.attackerId);
-      if (!attacker || attacker.ownerId !== client.sessionId) return;
-
-      const fireRate = msg.fireRate ?? 1;
-
-      let target: TroopState | null = null;
-      let targetId: string | null = null;
-      this.state.troops.forEach((troop, id) => {
-        if (troop.ownerId !== client.sessionId &&
-            troop.tileX === msg.targetTileX &&
-            troop.tileY === msg.targetTileY) {
-          target = troop;
-          targetId = id;
-        }
-      });
-
-      if (!target || !targetId) return;
-
-      const totalDamage = msg.damage * fireRate;
-      (target as TroopState).health = Math.max(0, (target as TroopState).health - totalDamage);
-
-      this.broadcast("troopDamage", {
-        id: targetId,
-        newHealth: (target as TroopState).health,
-        damage: totalDamage,
-        attackerId: msg.attackerId,
-      });
-
-      if ((target as TroopState).health <= 0) {
-        this.state.troops.delete(targetId);
-        this.broadcast("troopDied", { id: targetId });
-      }
+      this.handleAttackTile(client, msg);
     });
 
     this.onMessage("splashAttackTile", (client, msg: {
@@ -119,55 +88,7 @@ export class GameRoom extends Room {
       fireRate?: number;
       splashRadius: number;
     }) => {
-      const attacker = this.state.troops.get(msg.attackerId);
-      if (!attacker || attacker.ownerId !== client.sessionId) return;
-
-      const shots = Math.max(1, msg.fireRate ?? 1);
-      const splashRadius = Math.max(1, Math.min(20, msg.splashRadius | 0)); // clamp for safety
-      const totalBase = msg.damage * shots;
-
-      // Pass 1: find victims and compute scaled damage. Don't mutate during iteration.
-      const hits: { id: string; troop: TroopState; scaled: number }[] = [];
-      this.state.troops.forEach((troop, id) => {
-        if (troop.ownerId === attacker.ownerId) return;
-        if (troop.health <= 0) return;
-
-        const dist = Math.abs(troop.tileX - msg.targetTileX)
-                   + Math.abs(troop.tileY - msg.targetTileY);
-        if (dist >= splashRadius) return;
-
-        const falloff = (splashRadius - dist) / splashRadius;
-        const scaled = Math.round(totalBase * falloff);
-        if (scaled <= 0) return;
-
-        hits.push({ id, troop, scaled });
-      });
-
-      // Pass 2: apply damage, collect victim payloads, handle deaths.
-      const victims: { id: string; newHealth: number; totalDamage: number }[] = [];
-      const deaths: string[] = [];
-      for (const { id, troop, scaled } of hits) {
-        troop.health = Math.max(0, troop.health - scaled);
-        victims.push({ id, newHealth: troop.health, totalDamage: scaled });
-        if (troop.health <= 0) deaths.push(id);
-      }
-
-      // Broadcast splash first so clients can animate the projectile + progressive
-      // HP tick-down, then follow with troopDied so death handling stays consistent
-      // with the single-target attackTile path.
-      this.broadcast("splashDamage", {
-        attackerId: msg.attackerId,
-        targetTileX: msg.targetTileX,
-        targetTileY: msg.targetTileY,
-        shots,
-        projectileDamage: msg.damage,
-        victims,
-      });
-
-      for (const id of deaths) {
-        this.state.troops.delete(id);
-        this.broadcast("troopDied", { id });
-      }
+      this.handleAttackTile(client, msg);
     });
 
     this.onMessage("ready", (client, msg: { isReady: boolean }) => {
@@ -187,6 +108,60 @@ export class GameRoom extends Room {
         this.broadcast("gameStart", {});
       }
     });
+  }
+
+  private handleAttackTile(client: Client, msg: {
+    attackerId: string;
+    targetTileX: number;
+    targetTileY: number;
+    damage: number;
+    fireRate?: number;
+    splashRadius?: number;
+  }) {
+    const attacker = this.state.troops.get(msg.attackerId);
+    if (!attacker || attacker.ownerId !== client.sessionId) return;
+
+    const shots = Math.max(1, msg.fireRate ?? 1);
+    const splashRadius = Math.max(1, Math.min(20, (msg.splashRadius ?? 1) | 0));
+    const totalBase = msg.damage * shots;
+
+    const hits: { id: string; troop: TroopState; scaled: number }[] = [];
+    this.state.troops.forEach((troop, id) => {
+      if (troop.ownerId === attacker.ownerId) return;
+      if (troop.health <= 0) return;
+
+      const dist = Math.abs(troop.tileX - msg.targetTileX)
+                 + Math.abs(troop.tileY - msg.targetTileY);
+      if (dist >= splashRadius) return;
+
+      const falloff = (splashRadius - dist) / splashRadius;
+      const scaled = Math.round(totalBase * falloff);
+      if (scaled <= 0) return;
+
+      hits.push({ id, troop, scaled });
+    });
+
+    const victims: { id: string; newHealth: number; totalDamage: number }[] = [];
+    const deaths: string[] = [];
+    for (const { id, troop, scaled } of hits) {
+      troop.health = Math.max(0, troop.health - scaled);
+      victims.push({ id, newHealth: troop.health, totalDamage: scaled });
+      if (troop.health <= 0) deaths.push(id);
+    }
+
+    this.broadcast("splashDamage", {
+      attackerId: msg.attackerId,
+      targetTileX: msg.targetTileX,
+      targetTileY: msg.targetTileY,
+      shots,
+      projectileDamage: msg.damage,
+      victims,
+    });
+
+    for (const id of deaths) {
+      this.state.troops.delete(id);
+      this.broadcast("troopDied", { id });
+    }
   }
 
   onJoin(client: Client, options: { name?: string }) {
@@ -263,7 +238,6 @@ export class GameRoom extends Room {
     this.broadcast("playersUpdate", teams);
   }
 
-
   onReadyStateChange(fn: (readyCount: number, totalCount: number) => void) {
     this.readyStateListeners.push(fn);
   }
@@ -294,7 +268,6 @@ export class GameRoom extends Room {
   private stopMainTimer() {
     if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
   }
-
 
   onDispose() { this.stopMainTimer(); }
 }
