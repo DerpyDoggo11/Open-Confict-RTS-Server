@@ -28,10 +28,9 @@ const app = config({
       }
     });
 
-    expressApp.get("/lobby-rooms", async(_req, res) => {
+    expressApp.get("/lobby-rooms", async (_req, res) => {
       try {
         const rooms = await matchMaker.query({ name: "lobby_room" });
-
         const slots = Array.from({ length: MAX_SERVERS }, (_, i) => {
           const room = rooms.find(r => r.metadata?.serverIndex === i);
           return {
@@ -42,7 +41,6 @@ const app = config({
             locked: room?.locked ?? false,
           };
         });
-
         res.json(slots);
       } catch {
         res.json([]);
@@ -57,6 +55,7 @@ const app = config({
           startedAt:  r.metadata?.startedAt ?? Date.now(),
           clients:    r.clients,
           maxClients: r.maxClients,
+          map:        r.metadata?.map ?? 'isle',
         })));
       } catch {
         res.json([]);
